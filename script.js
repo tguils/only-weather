@@ -119,32 +119,37 @@ function fetchWeather(lat, lon) {
     `&timezone=auto`;
 
   fetch(weatherUrl)
-    .then(r => r.json())
-    .then(data => {
-      // Current
-      const current = data.current_weather;
-      if (current) {
-        temperatureElement.textContent = `${Math.round(current.temperature)}°F`;
-        const currentWeather = weatherCodes[current.weathercode] || { label: 'Unknown conditions', icon: 'unknown.png' };
-        const iconUrl = `icons/${currentWeather.icon}`;
-        descriptionElement.innerHTML = `
-          <img src="${iconUrl}" alt="${currentWeather.label}" class="weather-icon">
-          ${currentWeather.label}
-        `;
-      } else {
-        temperatureElement.textContent = '';
-        descriptionElement.textContent = '';
-      }
-      // Forecasts
-      displayForecast(data.daily);
-      displayHourly(data.hourly);
-    })
-    .catch(err => {
-      console.error('Error fetching weather data:', err);
+  .then(r => r.json())
+  .then(data => {
+    // Current
+    const current = data.current_weather;
+    if (current) {
+      temperatureElement.textContent = `${Math.round(current.temperature)}°F`;
+      const currentWeather = weatherCodes[current.weathercode] || { label: 'Unknown conditions', icon: 'unknown.png' };
+      const iconUrl = `icons/${currentWeather.icon}`;
+      descriptionElement.innerHTML = `
+        <img src="${iconUrl}" alt="${currentWeather.label}" class="weather-icon">
+        ${currentWeather.label}
+      `;
+
+      
+      setBackgroundVideo(current.weathercode);
+
+    } else {
       temperatureElement.textContent = '';
-      descriptionElement.textContent = 'Error loading weather';
-      clearForecastAndHourly();
-    });
+      descriptionElement.textContent = '';
+    }
+
+    // Forecasts
+    displayForecast(data.daily);
+    displayHourly(data.hourly);
+  })
+  .catch(err => {
+    console.error('Error fetching weather data:', err);
+    temperatureElement.textContent = '';
+    descriptionElement.textContent = 'Error loading weather';
+    clearForecastAndHourly();
+  });
 }
 
 // === UI Helpers ===
@@ -307,3 +312,38 @@ function displayHourly(hourly) {
     locationElement.textContent = 'Search a city to begin';
   }
 })();
+
+
+const weatherVideos = {
+  clear: "videos/RainBG.mp4",
+  cloudy: "videos/RainBG.mp4",
+  rain: "videos/RainBG.mp4",
+  snow: "videos/RainBG.mp4",
+  thunder: "videos/RainBG.mp4",
+  default: "videos/RainBG.mp4"
+};
+
+function setBackgroundVideo(code) {
+  const videoEl = document.getElementById("bg-video");
+  let src;
+
+  if ([0, 1].includes(code)) {
+    src = weatherVideos.clear;
+  } else if ([2, 3, 45, 48].includes(code)) {
+    src = weatherVideos.cloudy;
+  } else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+    src = weatherVideos.rain;
+  } else if ([71, 73, 75, 77, 85, 86].includes(code)) {
+    src = weatherVideos.snow;
+  } else if ([95, 96, 99].includes(code)) {
+    src = weatherVideos.thunder;
+  } else {
+    src = weatherVideos.default;
+  }
+
+  if (videoEl.src !== src) {
+    videoEl.src = src;   // only reload if it changed
+    videoEl.load();
+    videoEl.play().catch(err => console.log("Autoplay blocked:", err));
+  }
+}
