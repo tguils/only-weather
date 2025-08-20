@@ -13,6 +13,21 @@ const STORAGE = {
   DISPLAY: 'wx:lastDisplay',
 };
 
+// === State abbreviations ===
+const US_STATE_TO_ABBR = {
+  "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE","Florida":"FL","Georgia":"GA",
+  "Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA","Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD",
+  "Massachusetts":"MA","Michigan":"MI","Minnesota":"MN","Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH",
+  "New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA",
+  "Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT","Vermont":"VT","Virginia":"VA","Washington":"WA",
+  "West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY","District of Columbia":"DC"
+};
+function toUSAbbr(nameOrAbbr) {
+  if (!nameOrAbbr) return "";
+  if (nameOrAbbr.length <= 3 && nameOrAbbr.toUpperCase() === nameOrAbbr) return nameOrAbbr; // already "NH", "NY"
+  return US_STATE_TO_ABBR[nameOrAbbr] || nameOrAbbr;
+}
+
 // === Weather code map (Open-Meteo) ===
 const weatherCodes = {
   0:  { icon: '0.png',  label: 'Clear sky' },
@@ -66,7 +81,7 @@ function handleSearch() {
   setSearchingUI();
   const { city, state } = parseLocation(rawInput);
 
-  // Save raw immediately for convenience
+  // Save raw immediately
   localStorage.setItem(STORAGE.RAW, rawInput);
 
   fetchCoordinates(city, state, { rawInput });
@@ -78,33 +93,49 @@ function fetchCoordinates(city, state, meta = {}) {
   const params = new URLSearchParams({
     name: city || '',
     country: 'US',
-    count: '1'
+    count: '8'
   });
   if (state) params.set('state', state);
 
   fetch(`${base}?${params.toString()}`)
     .then(r => r.json())
     .then(data => {
-      if (data.results && data.results.length > 0) {
-        const { latitude, longitude, name, country, state: resultState } = data.results[0];
-        const display = `${name}${resultState ? `, ${resultState}` : ''}, ${country}`;
-        updateHeader(display);
-        saveLastLocation({
-          raw: meta.rawInput ?? `${city}${state ? ` ${state}` : ''}`,
-          lat: latitude,
-          lon: longitude,
-          display
-        });
-        fetchWeather(latitude, longitude);
-      } else {
+      const results = (data && data.results) ? data.results : [];
+
+      if (results.length === 0) {
         showNotFound();
+        return;
       }
+
+      // If user provided a state (NH / New Hampshire), prefer exact state matches
+      let filtered = results;
+      if (state) {
+        const inputStateLower = state.toLowerCase();
+        filtered = results.filter(p => {
+          const st = (p.state || p.admin1 || p.admin1_code || '').toLowerCase();
+          // match "NH" or "New Hampshire"
+          return st === inputStateLower || toUSAbbr(st).toLowerCase() === inputStateLower || toUSAbbr(state).toLowerCase() === toUSAbbr(st).toLowerCase();
+        });
+        if (filtered.length === 0) filtered = results; // fall back to all if no exact match
+      }
+
+      // If only one plausible result, use it directly
+      if (filtered.length === 1) {
+        choosePlace(filtered[0]);
+        return;
+      }
+
+      // Otherwise, show a chooser list
+      showGeocodeCandidates(filtered);
+      // Optional: also show all candidates if filtered got too narrow
+      // showGeocodeCandidates(filtered.length ? filtered : results);
     })
     .catch(err => {
       console.error('Error fetching coordinates:', err);
       showFindError();
     });
 }
+
 
 // === Weather fetch (current + daily + hourly) ===
 function fetchWeather(lat, lon) {
@@ -346,4 +377,77 @@ function setBackgroundVideo(code) {
     videoEl.load();
     videoEl.play().catch(err => console.log("Autoplay blocked:", err));
   }
+}
+
+const resultsContainer = document.getElementById('geocodeResults');
+
+function placeDisplay(place) {
+  const state = place.state || place.admin1 || "";
+  const statePretty = toUSAbbr(state);
+  if (place.country_code === 'US' || (place.country && place.country.toLowerCase().includes('united states'))) {
+    return statePretty ? `${place.name}, ${statePretty}` : place.name;
+  }
+  // Non-US fallback
+  return state ? `${place.name}, ${state}` : `${place.name}, ${place.country || ''}`.trim();
+}
+
+function clearGeocodeCandidates() {
+  if (!resultsContainer) return;
+  resultsContainer.innerHTML = '';
+}
+
+function showGeocodeCandidates(results) {
+  clearGeocodeCandidates();
+  if (!results || results.length === 0) return;
+
+  const list = document.createElement('div');
+  list.className = 'list';
+
+  results.forEach(place => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'item';
+    item.innerHTML = `
+      <span class="city">${placeDisplay(place)}</span>
+      <span class="meta">${place.latitude.toFixed(2)}, ${place.longitude.toFixed(2)}</span>
+    `;
+    item.addEventListener('click', () => choosePlace(place));
+    list.appendChild(item);
+  });
+
+  resultsContainer.appendChild(list);
+
+  // Close on outside click or Escape
+  const onClickAway = (e) => {
+    if (!resultsContainer.contains(e.target) && e.target !== locationInput) {
+      clearGeocodeCandidates();
+      window.removeEventListener('click', onClickAway);
+      window.removeEventListener('keydown', onEsc);
+    }
+  };
+  const onEsc = (e) => {
+    if (e.key === 'Escape') {
+      clearGeocodeCandidates();
+      window.removeEventListener('click', onClickAway);
+      window.removeEventListener('keydown', onEsc);
+    }
+  };
+  setTimeout(()=>{ // defer so the first click (that opened it) doesn't immediately close it
+    window.addEventListener('click', onClickAway);
+    window.addEventListener('keydown', onEsc);
+  },0);
+}
+
+function choosePlace(place) {
+  clearGeocodeCandidates();
+
+  const display = placeDisplay(place);
+  updateHeader(display);
+  saveLastLocation({
+    raw: locationInput.value.trim(),
+    lat: place.latitude,
+    lon: place.longitude,
+    display
+  });
+  fetchWeather(place.latitude, place.longitude);
 }
