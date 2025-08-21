@@ -346,12 +346,12 @@ function displayHourly(hourly) {
 
 
 const weatherVideos = {
-  clear: "videos/RainBG.mp4",
-  cloudy: "videos/RainBG.mp4",
+  clear: "videos/clearSky.mp4",
+  cloudy: "videos/cloudy.mp4",
   rain: "videos/RainBG.mp4",
-  snow: "videos/RainBG.mp4",
-  thunder: "videos/RainBG.mp4",
-  default: "videos/RainBG.mp4"
+  snow: "videos/snow.mp4",
+  thunder: "videos/thunder.mp4",
+  default: "videos/default.mp4"
 };
 
 function setBackgroundVideo(code) {
